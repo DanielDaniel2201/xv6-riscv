@@ -9,6 +9,8 @@ _entry:
         # stack0 is declared in start.c,
         # with a 4096-byte stack per CPU.
         # sp = stack0 + (hartid * 4096)
+        # stack0 is at address 0x80008a30 with size of 32768 (8 * 4096)
+        # which suppots 8, i.e., max number of CPUs
         la sp, stack0
         li a0, 1024*4
         csrr a1, mhartid

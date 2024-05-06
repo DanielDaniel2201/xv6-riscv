@@ -21,19 +21,21 @@ kvmmake(void)
 {
   pagetable_t kpgtbl;
 
+  // allocate a 4KB physical page to store kernel page table
   kpgtbl = (pagetable_t) kalloc();
+  // fill the page table with 0
   memset(kpgtbl, 0, PGSIZE);
 
-  // uart registers
+  // uart registers (directly mapping)
   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
-  // virtio mmio disk interface
+  // virtio mmio disk interface (directly mapping)
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
-  // PLIC
+  // PLIC (directly mapping)
   kvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
-  // map kernel text executable and read-only.
+  // map kernel text executable and read-only. (directly mapping)
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
   // map kernel data and the physical RAM we'll make use of.
@@ -53,6 +55,7 @@ kvmmake(void)
 void
 kvminit(void)
 {
+  // allocate a 4KB physical page for kernel page table, set all necessary mappings up and return the ptr to it
   kernel_pagetable = kvmmake();
 }
 
@@ -85,6 +88,7 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  // virtual address cannot exceed MAXVA
   if(va >= MAXVA)
     panic("walk");
 
@@ -150,6 +154,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
+  // keep looping till all the mappings indicated by size is successfully installed
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;

@@ -50,12 +50,14 @@ endif
 
 QEMU = qemu-system-riscv64
 
+# define the tool chains
 CC = $(TOOLPREFIX)gcc
 AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+# `CFLAGS` are flags used with C compiler
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
@@ -71,17 +73,26 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
+# `LDFLAGS` are flags for loader
 LDFLAGS = -z max-page-size=4096
 
+# first prerequisite--`OBJS`, for each object files in `OBJS`, generates it from .c or .S file
+# second prerequisite is satisfied
+# third prerequisite--`initcode`, jumps to the `$U/initcode` target and performs its recipes
 $K/kernel: $(OBJS) $K/kernel.ld $U/initcode
-	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) 
+# given linker script, link all object files and name the output file as `$K/kernel`
+	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS)
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
 $U/initcode: $U/initcode.S
+# comile initcode.S (assembly file) into initcode.o (object file)
 	$(CC) $(CFLAGS) -march=rv64g -nostdinc -I. -Ikernel -c $U/initcode.S -o $U/initcode.o
+# this loader command generates an executable file from initcode.o, stripping its symbols and setting an entry point
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $U/initcode.out $U/initcode.o
+# This command will take the linked object file user/initcode.out, strip it of symbols and relocation information, and produce a binary file user/initcode that contains just the raw executable code.
 	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
+# disassemble initcode.o into initcode.asm
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 tags: $(OBJS) _init

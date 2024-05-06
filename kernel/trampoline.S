@@ -24,7 +24,7 @@ uservec:
         # traps from user space start here,
         # in supervisor mode, but with a
         # user page table.
-        #
+        # we're in kernel now, yet using user page table for a little while.
 
         # save user a0 in sscratch so
         # a0 can be used to get at TRAPFRAME.
@@ -33,6 +33,8 @@ uservec:
         # each process has a separate p->trapframe memory area,
         # but it's mapped to the same virtual address
         # (TRAPFRAME) in every process's user page table.
+        # now a0 contains the address TRAPFRAME
+        # all contents to be saved to trapframe area can be done through a0 register
         li a0, TRAPFRAME
         
         # save the user registers in TRAPFRAME
@@ -45,6 +47,7 @@ uservec:
         sd t2, 88(a0)
         sd s0, 96(a0)
         sd s1, 104(a0)
+        # a0's original value is to be saved later since now it contains trapframe address
         sd a1, 120(a0)
         sd a2, 128(a0)
         sd a3, 136(a0)
@@ -72,12 +75,14 @@ uservec:
         sd t0, 112(a0)
 
         # initialize kernel stack pointer, from p->trapframe->kernel_sp
+        # that is, switch to the kernel stack
         ld sp, 8(a0)
 
         # make tp hold the current hartid, from p->trapframe->kernel_hartid
         ld tp, 32(a0)
 
         # load the address of usertrap(), from p->trapframe->kernel_trap
+        # to which function this code will jump
         ld t0, 16(a0)
 
 
@@ -89,12 +94,14 @@ uservec:
         sfence.vma zero, zero
 
         # install the kernel page table.
+        # which now indicates that trampoline page has the same mapping in both user page table as well as kernel page table
         csrw satp, t1
 
         # flush now-stale user entries from the TLB.
         sfence.vma zero, zero
 
         # jump to usertrap(), which does not return
+        # that is, change the program counter to usertrap() first instruction
         jr t0
 
 .globl userret
@@ -121,6 +128,7 @@ userret:
         ld t2, 88(a0)
         ld s0, 96(a0)
         ld s1, 104(a0)
+        # again postpone operation related to original value in a0
         ld a1, 120(a0)
         ld a2, 128(a0)
         ld a3, 136(a0)

@@ -31,7 +31,7 @@ trapinithart(void)
 
 //
 // handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
+// called from uservec (trampoline.S)
 //
 void
 usertrap(void)
@@ -48,8 +48,10 @@ usertrap(void)
   struct proc *p = myproc();
   
   // save user program counter.
+  // btw, ecall has saved the PC into sepc reg in the first place
   p->trapframe->epc = r_sepc();
   
+  // tell this cause of this trap (syscall, interrupt or exception)
   if(r_scause() == 8){
     // system call
 
@@ -58,12 +60,15 @@ usertrap(void)
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
+    // the value is to be used in sret instruction
     p->trapframe->epc += 4;
 
     // an interrupt will change sepc, scause, and sstatus,
     // so enable only now that we're done with those registers.
     intr_on();
 
+    // here we jump to syscall() where the actuall implementation of system calls will execute
+    // and the return value of the specified system call will be saved in p->trapframe->a0
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
@@ -80,6 +85,7 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
+  // after the syscall is serviced we now prepare for return from kernel to user
   usertrapret();
 }
 
@@ -117,6 +123,7 @@ usertrapret(void)
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
+  // to resume user space execution
   w_sepc(p->trapframe->epc);
 
   // tell trampoline.S the user page table to switch to.

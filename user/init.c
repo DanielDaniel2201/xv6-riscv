@@ -30,12 +30,14 @@ main(void)
       printf("init: fork failed\n");
       exit(1);
     }
+    // create a child process to run shell programm
     if(pid == 0){
       exec("sh", argv);
       printf("init: exec sh failed\n");
       exit(1);
     }
 
+    // the parent process(i.e. this one) waits until the shell program exits
     for(;;){
       // this call to wait() returns if the shell exits,
       // or if a parentless process exits.

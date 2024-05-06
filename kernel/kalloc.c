@@ -19,9 +19,9 @@ struct run {
 };
 
 struct {
-  struct spinlock lock;
-  struct run *freelist;
-} kmem;
+  struct spinlock lock; // 24 bytes
+  struct run *freelist; // 8 bytes
+} kmem; // 32 bytes overall for kmem struct
 
 void
 kinit()

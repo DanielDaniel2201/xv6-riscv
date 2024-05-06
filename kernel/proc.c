@@ -8,6 +8,8 @@
 
 struct cpu cpus[NCPU];
 
+// declare an array of struct procs
+// memory is allocated for it
 struct proc proc[NPROC];
 
 struct proc *initproc;
@@ -111,6 +113,9 @@ allocproc(void)
 {
   struct proc *p;
 
+
+  // iterate through the array of procs
+  // by having p point to each struct proc
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
@@ -280,6 +285,7 @@ int
 fork(void)
 {
   int i, pid;
+  // define a struct proc pointer
   struct proc *np;
   struct proc *p = myproc();
 

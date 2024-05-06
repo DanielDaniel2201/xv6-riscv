@@ -327,7 +327,7 @@ sfence_vma()
   asm volatile("sfence.vma zero, zero");
 }
 
-typedef uint64 pte_t;
+typedef uint64 pte_t; // i.e. 8-byte
 typedef uint64 *pagetable_t; // 512 PTEs
 
 #endif // __ASSEMBLER__

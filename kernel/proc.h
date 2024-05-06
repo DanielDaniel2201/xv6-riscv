@@ -83,25 +83,73 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
-  struct spinlock lock;
+  struct spinlock lock; //                                                     -->24 bytes
 
   // p->lock must be held when using these:
-  enum procstate state;        // Process state
-  void *chan;                  // If non-zero, sleeping on chan
-  int killed;                  // If non-zero, have been killed
-  int xstate;                  // Exit status to be returned to parent's wait
-  int pid;                     // Process ID
+  enum procstate state;        // Process state                                --> 4 bytes
+  void *chan;                  // If non-zero, sleeping on chan                --> 8 bytes
+  int killed;                  // If non-zero, have been killed                --> 4 bytes
+  int xstate;                  // Exit status to be returned to parent's wait  --> 4 bytes
+  int pid;                     // Process ID                                   --> 4 bytes
 
   // wait_lock must be held when using this:
-  struct proc *parent;         // Parent process
+  struct proc *parent;         // Parent process                               --> 8 btyes
 
   // these are private to the process, so p->lock need not be held.
-  uint64 kstack;               // Virtual address of kernel stack
-  uint64 sz;                   // Size of process memory (bytes)
-  pagetable_t pagetable;       // User page table
-  struct trapframe *trapframe; // data page for trampoline.S
-  struct context context;      // swtch() here to run process
-  struct file *ofile[NOFILE];  // Open files
-  struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
-};
+  uint64 kstack;               // Virtual address of kernel stack              --> 8 bytes
+  uint64 sz;                   // Size of process memory (bytes)               --> 8 bytes
+  pagetable_t pagetable;       // User page table                              --> 8 bytes
+  struct trapframe *trapframe; // data page for trampoline.S                   --> 8 bytes
+  struct context context;      // swtch() here to run process                  --> 112 bytes
+  struct file *ofile[NOFILE];  // Open files                                   --> 128 bytes (16 * 8)
+  struct inode *cwd;           // Current directory                            --> 8 bytes
+  char name[16];               // Process name (debugging)                     --> 16 bytes
+};//                                                                           ==> ( 348 ) 360 bytes overall for a proc struct
+
+
+// type = struct proc {
+// /*      0      |      24 */    struct spinlock {
+// /*      0      |       4 */        uint locked;
+// /* XXX  4-byte hole      */
+// /*      8      |       8 */        char *name;
+// /*     16      |       8 */        struct cpu *cpu;
+
+//                                    /* total size (bytes):   24 */
+//                                } lock;
+// /*     24      |       4 */    enum procstate state;
+// /* XXX  4-byte hole      */
+// /*     32      |       8 */    void *chan;
+// /*     40      |       4 */    int killed;
+// /*     44      |       4 */    int xstate;
+// /*     48      |       4 */    int pid;
+// /* XXX  4-byte hole      */
+// /*     56      |       8 */    struct proc *parent;
+// /*     64      |       8 */    uint64 kstack;
+// /*     72      |       8 */    uint64 sz;
+// /*     80      |       8 */    pagetable_t pagetable;
+// /*     88      |       8 */    struct trapframe *trapframe;
+// /*     96      |     112 */    struct context {
+// /*     96      |       8 */        uint64 ra;
+// /*    104      |       8 */        uint64 sp;
+// /*    112      |       8 */        uint64 s0;
+// /*    120      |       8 */        uint64 s1;
+// /*    128      |       8 */        uint64 s2;
+// /*    136      |       8 */        uint64 s3;
+// /*    144      |       8 */        uint64 s4;
+// /*    152      |       8 */        uint64 s5;
+// /*    160      |       8 */        uint64 s6;
+// /*    168      |       8 */        uint64 s7;
+// /*    176      |       8 */        uint64 s8;
+// /*    184      |       8 */        uint64 s9;
+// /*    192      |       8 */        uint64 s10;
+// --Type <RET> for more, q to quit, c to continue without paging--c
+// /*    200      |       8 */        uint64 s11;
+
+//                                    /* total size (bytes):  112 */
+//                                } context;
+// /*    208      |     128 */    struct file *ofile[16];
+// /*    336      |       8 */    struct inode *cwd;
+// /*    344      |      16 */    char name[16];
+
+//                                /* total size (bytes):  360 */
+//                              } [64]

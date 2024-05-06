@@ -32,8 +32,12 @@
 #define LCR_EIGHT_BITS (3<<0)
 #define LCR_BAUD_LATCH (1<<7) // special mode to set baud rate
 #define LSR 5                 // line status register
+// Line status register provides the status of transmit hold register (THR)
+// So whenever it's necessary to check the availability of THR we consult LSR
 #define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
+// Bit 0 of LSR repsents whether RHR is empty (1 for empty)
 #define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
+// Bit 5 of LSR represents whether THR is empty (1 for empty)
 
 #define ReadReg(reg) (*(Reg(reg)))
 #define WriteReg(reg, v) (*(Reg(reg)) = (v))
@@ -92,11 +96,12 @@ uartputc(int c)
     for(;;)
       ;
   }
-  while(uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE){
+  while(uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE){ // check whether the tx buffer is full
     // buffer is full.
     // wait for uartstart() to open up space in the buffer.
     sleep(&uart_tx_r, &uart_tx_lock);
   }
+  // add the character `c` to tx buffer at location w
   uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = c;
   uart_tx_w += 1;
   uartstart();
@@ -121,6 +126,7 @@ uartputc_sync(int c)
   // wait for Transmit Holding Empty to be set in LSR.
   while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
     ;
+  // When THR is empty (available for writing), write the character to it.
   WriteReg(THR, c);
 
   pop_off();
@@ -139,6 +145,7 @@ uartstart()
       return;
     }
     
+    // check whether THR is empty(avaibable for writing), if not, return.
     if((ReadReg(LSR) & LSR_TX_IDLE) == 0){
       // the UART transmit holding register is full,
       // so we cannot give it another byte.
@@ -146,12 +153,14 @@ uartstart()
       return;
     }
     
+    // read next charactor from tx buffer
     int c = uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE];
     uart_tx_r += 1;
     
     // maybe uartputc() is waiting for space in the buffer.
     wakeup(&uart_tx_r);
     
+    // write the character
     WriteReg(THR, c);
   }
 }
