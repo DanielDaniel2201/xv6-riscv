@@ -79,27 +79,30 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
   int i = 0;
   struct proc *pr = myproc();
 
+  // this acquisition stops spinning until a sleep() is called on the same conditional lock
   acquire(&pi->lock);
   while(i < n){
-    if(pi->readopen == 0 || killed(pr)){
+    if(pi->readopen == 0 || killed(pr)){ // drop the operation if read fd is closed or the process is killed
       release(&pi->lock);
       return -1;
     }
     if(pi->nwrite == pi->nread + PIPESIZE){ //DOC: pipewrite-full
+      // if buffer is full, wake up piperead() (that is the woken process is RUNNABLE)
       wakeup(&pi->nread);
+      // then sleep this process when piperead is done
       sleep(&pi->nwrite, &pi->lock);
     } else {
       char ch;
-      if(copyin(pr->pagetable, &ch, addr + i, 1) == -1)
+      if(copyin(pr->pagetable, &ch, addr + i, 1) == -1) // copy a char from user program to here (kernel space)
         break;
       pi->data[pi->nwrite++ % PIPESIZE] = ch;
       i++;
     }
   }
-  wakeup(&pi->nread);
-  release(&pi->lock);
+  wakeup(&pi->nread); // wake up any sleeping readers
+  release(&pi->lock); // pipe's lock is released and piperead can stop spinning in acquire()
 
-  return i;
+  return i; // return no. of bytes written to the pipe
 }
 
 int
@@ -109,12 +112,15 @@ piperead(struct pipe *pi, uint64 addr, int n)
   struct proc *pr = myproc();
   char ch;
 
+  // this acquisition stops spinning until a sleep() is called on the same conditional lock
   acquire(&pi->lock);
   while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
     if(killed(pr)){
       release(&pi->lock);
       return -1;
     }
+    // when buffer is empty and writeopen, this process sleeps and to be woken up by pipewrite()
+    // in sleep() the conditional lock "&pi->lock" is released such that pipewrite() can proceed
     sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep
   }
   for(i = 0; i < n; i++){  //DOC: piperead-copy
@@ -124,7 +130,7 @@ piperead(struct pipe *pi, uint64 addr, int n)
     if(copyout(pr->pagetable, addr + i, &ch, 1) == -1)
       break;
   }
-  wakeup(&pi->nwrite);  //DOC: piperead-wakeup
+  wakeup(&pi->nwrite);  //DOC: piperead-wakeup // mark as RUNNABLE
   release(&pi->lock);
   return i;
 }

@@ -466,7 +466,8 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
+        swtch(&c->context, &p->context); // from this line, xv6 is executing the chosen process and
+        // the current scheduler context is saved in cpu->context, for later use of swtch() in sched()
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -490,11 +491,11 @@ sched(void)
   int intena;
   struct proc *p = myproc();
 
-  if(!holding(&p->lock))
+  if(!holding(&p->lock)) // double-check process's lock should be acquired before sched() is called
     panic("sched p->lock");
   if(mycpu()->noff != 1)
     panic("sched locks");
-  if(p->state == RUNNING)
+  if(p->state == RUNNING) // double-check process state should be changed before sched() is called
     panic("sched running");
   if(intr_get())
     panic("sched interruptible");
@@ -550,11 +551,11 @@ sleep(void *chan, struct spinlock *lk)
   // (wakeup locks p->lock),
   // so it's okay to release lk.
 
-  acquire(&p->lock);  //DOC: sleeplock1
+  acquire(&p->lock);  //DOC: sleeplock1 // acquire p->lock to change proc's chan and state
   release(lk);
 
   // Go to sleep.
-  p->chan = chan;
+  p->chan = chan; // record the sleep channel in the proc's 
   p->state = SLEEPING;
 
   sched();
@@ -567,7 +568,7 @@ sleep(void *chan, struct spinlock *lk)
   acquire(lk);
 }
 
-// Wake up all processes sleeping on chan.
+// Wake up all processes sleeping on chan, i.e., set p->state to RUNNABLE
 // Must be called without any p->lock.
 void
 wakeup(void *chan)
