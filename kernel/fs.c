@@ -32,15 +32,15 @@ readsb(int dev, struct superblock *sb)
 {
   struct buf *bp;
 
-  bp = bread(dev, 1);
-  memmove(sb, bp->data, sizeof(*sb));
-  brelse(bp);
+  bp = bread(dev, 1); // read the block with blockno 1 of dev into a cache buffer
+  memmove(sb, bp->data, sizeof(*sb)); // copy superblock content in the buffer to the given superblock ptr
+  brelse(bp); // release the buffer when it's done
 }
 
 // Init fs
 void
 fsinit(int dev) {
-  readsb(dev, &sb);
+  readsb(dev, &sb); // read the superblock into a block in buffer cache
   if(sb.magic != FSMAGIC)
     panic("invalid file system");
   initlog(dev, &sb);
@@ -52,8 +52,8 @@ bzero(int dev, int bno)
 {
   struct buf *bp;
 
-  bp = bread(dev, bno);
-  memset(bp->data, 0, BSIZE);
+  bp = bread(dev, bno); // read the block into buffer cache and return a pointer to the buffer block
+  memset(bp->data, 0, BSIZE); // zero the buffer block
   log_write(bp);
   brelse(bp);
 }
@@ -66,18 +66,18 @@ static uint
 balloc(uint dev)
 {
   int b, bi, m;
-  struct buf *bp;
+  struct buf *bp; // buffer pointer for bit map blocks, since to inspect bit map block, it has to be read into buffer cache first
 
   bp = 0;
   for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
-    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
-      m = 1 << (bi % 8);
+    bp = bread(dev, BBLOCK(b, sb)); // return a pointer to a bit map block in cache, which contains bit mappings
+    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){ // loop within a bit map block
+      m = 1 << (bi % 8); // construct a mask to check whether a bit is 1 or 0
       if((bp->data[bi/8] & m) == 0){  // Is block free?
-        bp->data[bi/8] |= m;  // Mark block in use.
+        bp->data[bi/8] |= m;  // Mark block in use. (an operation that changes the content of a bufferred block)
         log_write(bp);
         brelse(bp);
-        bzero(dev, b + bi);
+        bzero(dev, b + bi); // allocate a block and zero it out
         return b + bi;
       }
     }
@@ -99,7 +99,7 @@ bfree(int dev, uint b)
   m = 1 << (bi % 8);
   if((bp->data[bi/8] & m) == 0)
     panic("freeing free block");
-  bp->data[bi/8] &= ~m;
+  bp->data[bi/8] &= ~m; // marking the exact bit 0
   log_write(bp);
   brelse(bp);
 }
@@ -173,6 +173,7 @@ bfree(int dev, uint b)
 // dev, and inum.  One must hold ip->lock in order to
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
+// in-memory inode table
 struct {
   struct spinlock lock;
   struct inode inode[NINODE];
@@ -192,7 +193,7 @@ iinit()
 static struct inode* iget(uint dev, uint inum);
 
 // Allocate an inode on device dev.
-// Mark it as allocated by  giving it type type.
+// Mark it as allocated by giving it type type.
 // Returns an unlocked but allocated and referenced inode,
 // or NULL if there is no free inode.
 struct inode*
@@ -203,7 +204,7 @@ ialloc(uint dev, short type)
   struct dinode *dip;
 
   for(inum = 1; inum < sb.ninodes; inum++){
-    bp = bread(dev, IBLOCK(inum, sb));
+    bp = bread(dev, IBLOCK(inum, sb)); // read an inode block from device into memory
     dip = (struct dinode*)bp->data + inum%IPB;
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
@@ -228,8 +229,8 @@ iupdate(struct inode *ip)
   struct buf *bp;
   struct dinode *dip;
 
-  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
-  dip = (struct dinode*)bp->data + ip->inum%IPB;
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb)); // read the inode from disk
+  dip = (struct dinode*)bp->data + ip->inum%IPB; // get the exact dinode struct
   dip->type = ip->type;
   dip->major = ip->major;
   dip->minor = ip->minor;
@@ -270,7 +271,7 @@ iget(uint dev, uint inum)
   ip->dev = dev;
   ip->inum = inum;
   ip->ref = 1;
-  ip->valid = 0;
+  ip->valid = 0; // so the inode here doesn't contain any useful infomation, it's necessary to call ilock()
   release(&itable.lock);
 
   return ip;
@@ -298,9 +299,9 @@ ilock(struct inode *ip)
   if(ip == 0 || ip->ref < 1)
     panic("ilock");
 
-  acquiresleep(&ip->lock);
+  acquiresleep(&ip->lock); // lock
 
-  if(ip->valid == 0){
+  if(ip->valid == 0){ // an invalid inode, needs to read from disk
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
