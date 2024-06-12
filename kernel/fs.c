@@ -259,7 +259,7 @@ iget(uint dev, uint inum)
       release(&itable.lock);
       return ip;
     }
-    if(empty == 0 && ip->ref == 0)    // Remember empty slot.
+    if(empty == 0 && ip->ref == 0)    // Remember 1st empty slot in itable.
       empty = ip;
   }
 
@@ -274,7 +274,7 @@ iget(uint dev, uint inum)
   ip->valid = 0; // so the inode here doesn't contain any useful infomation, it's necessary to call ilock()
   release(&itable.lock);
 
-  return ip;
+  return ip; // return a C pointer
 }
 
 // Increment reference count for ip.
@@ -285,7 +285,7 @@ idup(struct inode *ip)
   acquire(&itable.lock);
   ip->ref++;
   release(&itable.lock);
-  return ip;
+  return ip; // return a C pointer
 }
 
 // Lock the given inode.
@@ -301,7 +301,7 @@ ilock(struct inode *ip)
 
   acquiresleep(&ip->lock); // lock
 
-  if(ip->valid == 0){ // an invalid inode, needs to read from disk
+  if(ip->valid == 0){ // an invalid inode, needs to read its corresponding dinode from disk
     bp = bread(ip->dev, IBLOCK(ip->inum, sb));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
@@ -386,18 +386,18 @@ bmap(struct inode *ip, uint bn)
   uint addr, *a;
   struct buf *bp;
 
-  if(bn < NDIRECT){
+  if(bn < NDIRECT){ // the block is a direct data block
     if((addr = ip->addrs[bn]) == 0){
-      addr = balloc(ip->dev);
+      addr = balloc(ip->dev); // allocate a on-disk block for it
       if(addr == 0)
         return 0;
       ip->addrs[bn] = addr;
     }
-    return addr;
+    return addr; // the in-memory address of the desired data block
   }
-  bn -= NDIRECT;
+  bn -= NDIRECT; // else, the block lives in indirect data blocks
 
-  if(bn < NINDIRECT){
+  if(bn < NINDIRECT){ // the block should fit in the size of indirect blocks
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0){
       addr = balloc(ip->dev);
@@ -405,7 +405,7 @@ bmap(struct inode *ip, uint bn)
         return 0;
       ip->addrs[NDIRECT] = addr;
     }
-    bp = bread(ip->dev, addr);
+    bp = bread(ip->dev, addr); // read in the indirect block (full of addresses)
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
       addr = balloc(ip->dev);
@@ -432,8 +432,8 @@ itrunc(struct inode *ip)
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
-      ip->addrs[i] = 0;
+      bfree(ip->dev, ip->addrs[i]); // free the disk block
+      ip->addrs[i] = 0; // zero out each block number / data block address
     }
   }
 
@@ -475,17 +475,17 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
-  if(off > ip->size || off + n < off)
+  if(off > ip->size || off + n < off) // return an error if offset is beyond the file's size or count is negative
     return 0;
-  if(off + n > ip->size)
+  if(off + n > ip->size) // truncate the amount that exceeds file's size
     n = ip->size - off;
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
-    uint addr = bmap(ip, off/BSIZE);
+    uint addr = bmap(ip, off/BSIZE); // get the data block addres
     if(addr == 0)
       break;
-    bp = bread(ip->dev, addr);
-    m = min(n - tot, BSIZE - off%BSIZE);
+    bp = bread(ip->dev, addr); // read in the block to memory
+    m = min(n - tot, BSIZE - off%BSIZE); // the maximum bytes to read in the current block
     if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
       brelse(bp);
       tot = -1;
@@ -493,7 +493,7 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
     }
     brelse(bp);
   }
-  return tot;
+  return tot; // return total of bytes read
 }
 
 // Write data to inode.
@@ -511,7 +511,7 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 
   if(off > ip->size || off + n < off)
     return -1;
-  if(off + n > MAXFILE*BSIZE)
+  if(off + n > MAXFILE*BSIZE) // return an error if # of bytes to write exceeds the max size of a file
     return -1;
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
@@ -524,7 +524,7 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
       brelse(bp);
       break;
     }
-    log_write(bp);
+    log_write(bp); // dp->data is changed
     brelse(bp);
   }
 
@@ -555,7 +555,7 @@ dirlookup(struct inode *dp, char *name, uint *poff)
   uint off, inum;
   struct dirent de;
 
-  if(dp->type != T_DIR)
+  if(dp->type != T_DIR) // the inode's type must be directory here
     panic("dirlookup not DIR");
 
   for(off = 0; off < dp->size; off += sizeof(de)){
@@ -568,7 +568,7 @@ dirlookup(struct inode *dp, char *name, uint *poff)
       if(poff)
         *poff = off;
       inum = de.inum;
-      return iget(dp->dev, inum);
+      return iget(dp->dev, inum); // an unlocked inode, in case that it looks up for it self "." or parent dir ".."
     }
   }
 
@@ -594,13 +594,13 @@ dirlink(struct inode *dp, char *name, uint inum)
   for(off = 0; off < dp->size; off += sizeof(de)){
     if(readi(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
       panic("dirlink read");
-    if(de.inum == 0)
+    if(de.inum == 0) // find a free de to use
       break;
   }
-
+  // set name and inum
   strncpy(de.name, name, DIRSIZ);
   de.inum = inum;
-  if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+  if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de)) // write the de into dp->data1
     return -1;
 
   return 0;
@@ -617,8 +617,8 @@ dirlink(struct inode *dp, char *name, uint inum)
 // Examples:
 //   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
 //   skipelem("///a//bb", name) = "bb", setting name = "a"
-//   skipelem("a", name) = "", setting name = "a"
-//   skipelem("", name) = skipelem("////", name) = 0
+//   skipelem("a", name) = "", setting name = "a" --> name is the last one
+//   skipelem("", name) = skipelem("////", name) = 0 --> name is the last one
 //
 static char*
 skipelem(char *path, char *name)
@@ -626,9 +626,9 @@ skipelem(char *path, char *name)
   char *s;
   int len;
 
-  while(*path == '/')
+  while(*path == '/') // skipping leading back slashes
     path++;
-  if(*path == 0)
+  if(*path == 0) // path contains nothing or only back slashes
     return 0;
   s = path;
   while(*path != '/' && *path != 0)
@@ -654,10 +654,10 @@ namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
 
-  if(*path == '/')
+  if(*path == '/') // root directory
     ip = iget(ROOTDEV, ROOTINO);
   else
-    ip = idup(myproc()->cwd);
+    ip = idup(myproc()->cwd); // current directory
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);

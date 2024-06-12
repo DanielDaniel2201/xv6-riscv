@@ -33,8 +33,8 @@
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
 struct logheader {
-  int n;
-  int block[LOGSIZE];
+  int n; // 0 indicating no transaction in the log or non-0 indicating # of logged blocks for a committed transaction
+  int block[LOGSIZE]; // an array of block #s, the real home locations
 };
 
 struct log {
@@ -46,7 +46,7 @@ struct log {
   int dev;
   struct logheader lh;
 };
-struct log log;
+struct log log; // in-memory log structure
 
 static void recover_from_log(void);
 static void commit();
@@ -54,17 +54,18 @@ static void commit();
 void
 initlog(int dev, struct superblock *sb)
 {
-  if (sizeof(struct logheader) >= BSIZE)
+  if (sizeof(struct logheader) >= BSIZE) // log header must fit in a single block
     panic("initlog: too big logheader");
 
   initlock(&log.lock, "log");
   log.start = sb->logstart;
   log.size = sb->nlog;
   log.dev = dev;
-  recover_from_log();
+  recover_from_log(); // every time log is initialized, xv6 recovers from the previous log
 }
 
 // Copy committed blocks from log to their home location
+// reads each block from the log and writes it to the proper place in the file system
 static void
 install_trans(int recovering)
 {
@@ -73,7 +74,7 @@ install_trans(int recovering)
   for (tail = 0; tail < log.lh.n; tail++) {
     struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
-    memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
+    memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst (dbuf->data)
     bwrite(dbuf);  // write dst to disk
     if(recovering == 0)
       bunpin(dbuf);
@@ -86,19 +87,21 @@ install_trans(int recovering)
 static void
 read_head(void)
 {
-  struct buf *buf = bread(log.dev, log.start);
+  struct buf *buf = bread(log.dev, log.start); // read in the block that contains log header
   struct logheader *lh = (struct logheader *) (buf->data);
   int i;
-  log.lh.n = lh->n;
+  log.lh.n = lh->n; // # of logged blocks for a complete committed transaction
   for (i = 0; i < log.lh.n; i++) {
-    log.lh.block[i] = lh->block[i];
+    log.lh.block[i] = lh->block[i]; // copy in the block # of the logged blocks
   }
   brelse(buf);
 }
 
 // Write in-memory log header to disk.
 // This is the true point at which the
-// current transaction commits.
+// current transaction commits. Since
+// everytime the system is booted, it
+// checks the header to do the recovery
 static void
 write_head(void)
 {
@@ -109,7 +112,7 @@ write_head(void)
   for (i = 0; i < log.lh.n; i++) {
     hb->block[i] = log.lh.block[i];
   }
-  bwrite(buf);
+  bwrite(buf); // <---the *commit* line
   brelse(buf);
 }
 
@@ -128,9 +131,9 @@ begin_op(void)
 {
   acquire(&log.lock);
   while(1){
-    if(log.committing){
+    if(log.committing){ // while committing a transaction, doesn't start a new transaction, goes to sleep
       sleep(&log, &log.lock);
-    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
+    } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){ // new transaction exceeds log space, goes to sleep
       // this op might exhaust log space; wait for commit.
       sleep(&log, &log.lock);
     } else {
@@ -152,7 +155,7 @@ end_op(void)
   log.outstanding -= 1;
   if(log.committing)
     panic("log.committing");
-  if(log.outstanding == 0){
+  if(log.outstanding == 0){ // no other FS syscall is undergoing
     do_commit = 1;
     log.committing = 1;
   } else {
@@ -169,12 +172,12 @@ end_op(void)
     commit();
     acquire(&log.lock);
     log.committing = 0;
-    wakeup(&log);
+    wakeup(&log); // corresponds to the sleep()s in begin_op()
     release(&log.lock);
   }
 }
 
-// Copy modified blocks from cache to log.
+// copies each block modified in the transaction from the buffer cache to its slot in the log on disk
 static void
 write_log(void)
 {
@@ -194,11 +197,11 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
-    write_log();     // Write modified blocks from cache to log
+    write_log();     // Write modified blocks from cache to disk log
     write_head();    // Write header to disk -- the real commit
     install_trans(0); // Now install writes to home locations
     log.lh.n = 0;
-    write_head();    // Erase the transaction from the log
+    write_head();    // Erase the transaction from the log, i.e. Clean
   }
 }
 

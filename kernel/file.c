@@ -16,7 +16,7 @@
 struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
-  struct file file[NFILE];
+  struct file file[NFILE]; //keeps all open files
 } ftable;
 
 void
@@ -33,7 +33,7 @@ filealloc(void)
 
   acquire(&ftable.lock);
   for(f = ftable.file; f < ftable.file + NFILE; f++){
-    if(f->ref == 0){
+    if(f->ref == 0){ // find a file struct with 0 reference
       f->ref = 1;
       release(&ftable.lock);
       return f;
@@ -48,7 +48,7 @@ struct file*
 filedup(struct file *f)
 {
   acquire(&ftable.lock);
-  if(f->ref < 1)
+  if(f->ref < 1) // there should be a reference to "duplicate" at least
     panic("filedup");
   f->ref++;
   release(&ftable.lock);

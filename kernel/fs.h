@@ -33,7 +33,7 @@ struct dinode {
   short type;           // File type
   short major;          // Major device number (T_DEVICE only)
   short minor;          // Minor device number (T_DEVICE only)
-  short nlink;          // Number of links to inode in file system
+  short nlink;          // Number of links to inode in file system, free the inode if nlink is 0
   uint size;            // Size of file (bytes)
   uint addrs[NDIRECT+1];   // Data block addresses
 };
@@ -54,7 +54,7 @@ struct dinode {
 #define DIRSIZ 14
 
 struct dirent {
-  ushort inum;
-  char name[DIRSIZ];
+  ushort inum; // the corresponding inode # on disk
+  char name[DIRSIZ]; // each directory entry's name is at most 14 characters
 };
 
